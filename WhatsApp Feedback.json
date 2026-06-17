@@ -1,0 +1,457 @@
+{
+  "name": "WhatsApp Feedback",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "=whatsapp-feedback",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1520,
+        -160
+      ],
+      "id": "b13147ed-43fb-4db5-9972-91af04dc5745",
+      "name": "Webhook",
+      "webhookId": "92ff2701-9094-462e-8fdc-3e6862d831ad"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Tu es un assistant SAV.\n\nAnalyse les messages WhatsApp des techniciens.\n\nRetourne uniquement un JSON valide.\n\nFormat :\n\n{\n  \"status\": \"\",\n  \"sip\": \"\",\n  \"intervention_type\": \"\",\n  \"commentaire\": \"\"\n}\n\nstatus possibles :\nRESOLVED\nBLOCKED\nPLANIFIED\nIN_PROGRESS\n\nExtraire le SIP commençant par 05.\n\nNe retourne que du JSON."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1088,
+        -160
+      ],
+      "id": "7104a589-ebd8-4738-8b61-f452e3466dc6",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    chatInput: $json.body.data.body\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1312,
+        -160
+      ],
+      "id": "95a5a6fd-c362-4a05-b88a-7468659ad79f",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO technician_feedback\n(\ncase_id,\nteam_name,\nfeedback_status,\nfeedback_comment\n)\nVALUES\n(\n{{ $(\"Find Case\").item.json.id }},\n'{{ $(\"Find Case\").item.json.assigned_team }}',\n'{{ $(\"Parse AI JSON\").item.json.status }}',\n'{{ $(\"Parse AI JSON\").item.json.commentaire }}'\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -352,
+        160
+      ],
+      "id": "9a091001-52b6-46ac-a20f-bbef40fc2885",
+      "name": "Insert feedback",
+      "credentials": {
+        "mySql": {
+          "id": "RxizL58A2DqNtSt3",
+          "name": "MySQL account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cases\nSET current_status='{{ $(\"Parse AI JSON\").item.json.status }}'\nWHERE id={{ $(\"Find Case\").item.json.id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -176,
+        0
+      ],
+      "id": "65ef195f-b53e-43d5-89c3-7750ded91f7e",
+      "name": "Update case",
+      "credentials": {
+        "mySql": {
+          "id": "RxizL58A2DqNtSt3",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = JSON.parse($json.output);\n\nreturn [{\n  json: {\n    status: data.status,\n    sip: data.sip,\n    intervention_type: data.intervention_type,\n    commentaire: data.commentaire\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        48
+      ],
+      "id": "1875fa6b-4fee-4a6c-bc54-c0f37bcad847",
+      "name": "Parse AI JSON"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM cases\nWHERE network_access='{{ $(\"Parse AI JSON\").item.json.sip }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -544,
+        -160
+      ],
+      "id": "ef2a0a4c-22b7-4f25-bfe8-4028f57981fb",
+      "name": "Find Case",
+      "credentials": {
+        "mySql": {
+          "id": "RxizL58A2DqNtSt3",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        144
+      ],
+      "id": "37e368c8-b849-4c6f-b92e-38fc7cd78dd9",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "VwaUYrYfPUtEoEDL",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO case_updates\n(\ncase_id,\nupdate_type,\nupdate_message,\nupdated_by\n)\nVALUES\n(\n{{ $(\"Find Case\").item.json.id }},\n'{{ $(\"Parse AI JSON\").item.json.status }}',\n'{{ $(\"Parse AI JSON\").item.json.commentaire }}',\n'{{ $(\"Webhook\").item.json.body.data.pushname }}'\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        176
+      ],
+      "id": "120131e6-eb8a-48d5-ba19-ba83616af732",
+      "name": "Save History",
+      "credentials": {
+        "mySql": {
+          "id": "RxizL58A2DqNtSt3",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "324b57ad-2944-4e23-9a06-1d329a15a4ee",
+              "leftValue": "={{ Number($json.id) }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "29a30226-f526-4316-a85f-d5088dd932f2",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -256,
+        -224
+      ],
+      "id": "636f66dc-06e9-4edf-9a23-cdccf1714713",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1ED6i-dDpyN1ZfbMjMsAruxt-3NTuPOrGU5KcTjTjPyo",
+          "mode": "list",
+          "cachedResultName": "SAV_Interventions",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ED6i-dDpyN1ZfbMjMsAruxt-3NTuPOrGU5KcTjTjPyo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Feuille 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ED6i-dDpyN1ZfbMjMsAruxt-3NTuPOrGU5KcTjTjPyo/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sip": "={{ $(\"Parse AI JSON\").item.json.sip }}",
+            "date": "={{ $now }}",
+            "intervention_type": "={{ $(\"Parse AI JSON\").item.json.intervention_type }}",
+            "technicien": "={{ $(\"Find Case\").item.json.assigned_team }}",
+            "commentaire": "={{ $(\"Parse AI JSON\").item.json.commentaire }}",
+            "case_id": "={{ $(\"Find Case\").item.json.id }}",
+            "current_status": "={{ $(\"Parse AI JSON\").item.json.status }}"
+          },
+          "matchingColumns": [
+            "sip"
+          ],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sip",
+              "displayName": "sip",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "current_status",
+              "displayName": "current_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "intervention_type",
+              "displayName": "intervention_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "technicien",
+              "displayName": "technicien",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "commentaire",
+              "displayName": "commentaire",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "case_id",
+              "displayName": "case_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        192,
+        16
+      ],
+      "id": "74ec57f7-ec39-451d-8c59-a8f847b38a82",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "TT5WJenNRTVWFlF4",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert feedback": {
+      "main": [
+        [
+          {
+            "node": "Update case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI JSON": {
+      "main": [
+        [
+          {
+            "node": "Find Case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Case": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update case": {
+      "main": [
+        [
+          {
+            "node": "Save History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Insert feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save History": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f26bf1bd-d433-492d-aeb0-b487deccd8a9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e2782d7792ffa52f3a8e16d6b4b44b6773df3bc3f577d345b9e513835de45513"
+  },
+  "id": "6a0V57heqdKcIVyu",
+  "tags": []
+}

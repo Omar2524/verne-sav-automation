@@ -1,0 +1,254 @@
+{
+  "name": "Send case to whatsapp",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -336,
+        -32
+      ],
+      "id": "57c2dfb3-bf56-4348-83ff-801b9da73587",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d57027a2-c331-4dc5-a590-c1ea03ad9cdf",
+              "name": "raw_email",
+              "value": "ID CASE : CAS-19798155-Z0D0H4  Client :  MOURAD BAHA  Téléphone :   Accès réseau:  0520696415  Activités de service : Réclamation|Dérangement|Accès -  Type de problème :  Description : .  Commentaire : Verne//CAS123_OLT-3-7-//RES CODE 01.5.32//7Clients down  Id connexion :  001228934  Adresse Installation :  CASABLANCA BELVEDERE CRAONNE 38 CODE 01.5.32.036 ETG 1 APT 1 ETG 1 APT 1  Login Internet :  001228934",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -128,
+        -32
+      ],
+      "id": "96a7eb90-88e4-4e5e-8e1c-d2d716d677cd",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "const email = $json.raw_email || '';\n\nfunction extract(regex) {\nconst match = email.match(regex);\nreturn match ? match[1].trim() : null;\n}\n\n// Extraction des champs principaux\nconst case_number = extract(/ID CASE\\s*:\\s*(.*?)\\s+Client\\s*:/is);\n\nconst customer_name = extract(\n/Client\\s*:\\s*(.*?)\\s+Téléphone\\s*:/is\n);\n\nlet customer_phone = extract(\n  /Téléphone\\s*:\\s*(.*?)\\s+Accès réseau\\s*:/is\n);\n\n// Si téléphone vide => récupérer Contact dans commentaire\nif (!customer_phone || customer_phone.trim() === '') {\n\n  const contactMatch = email.match(\n    /Contact\\s*:\\s*(\\d{10})/i\n  );\n\n  if (contactMatch) {\n    customer_phone = contactMatch[1];\n  }\n}\nconst network_access = extract(\n/Accès réseau\\s*:\\s*(.*?)\\s+Activités de service\\s*:/is\n);\n\nconst service_activity = extract(\n/Activités de service\\s*:\\s*(.*?)\\s+Type de problème\\s*:/is\n);\n\nconst problem_type = extract(\n/Type de problème\\s*:\\s*(.*?)\\s+Description\\s*:/is\n);\n\nlet description_text = extract(\n/Description\\s*:\\s*(.*?)\\s+Commentaire\\s*:/is\n);\n\n// Nettoyage description\ndescription_text = (description_text || '').trim();\n\nif (\ndescription_text === \"'\" ||\ndescription_text === '\"' ||\ndescription_text === \"''\"\n) {\ndescription_text = '';\n}\n\nconst comment_text = extract(\n/Commentaire\\s*:\\s*(.*?)\\s+Id connexion\\s*:/is\n);\n\nconst internet_login = extract(\n/Login Internet\\s*:\\s*(.*)/is\n);\n\n// Adresse Installation\nlet full_address = extract(\n/Adresse Installation\\s*:\\s*(.*?)\\s+Login Internet\\s*:/is\n);\n\n// Si Adresse Installation vide => chercher dans commentaire\nif (!full_address && comment_text) {\nconst addressMatch = comment_text.match(\n/Adresse\\s*:\\s*(.*?)(?:Description de l’incident|Date d’incident|GPON|Voyants|INJECTION|$)/is\n);\n\nif (addressMatch) {\nfull_address = addressMatch[1].trim();\n}\n}\n\n// Liste des zones\nconst zones = [\n'GIRONDE',\n'MAARIF',\n'RACINE',\n'BOURGOGNE',\n'BACKHOU',\n'BEAUSEJOUR',\n'GAUTHIER',\n'ALSACE',\n'PALMIER',\n'DERB GHALEF',\n'VAL FLEURI',\n'CIT PLATEAU',\n'BELVEDERE',\n'BIADA',\n'AIN BORJA',\n'CENTRE VILLE',\n'HOPITAUX',\n'MOUAHIDINE',\n'ROCHES NOIRES',\n'PALESTINE',\n'HAY MOHAMMADI',\n'CIL',\n'CIL POTO',\n'TETOUAN',\n'MEDINA',\n'BURGER',\n'ABOUJARRAH'\n];\n\n// Détection zone\nlet local_area = null;\n\nconst searchText = (\nemail +\n' ' +\n(full_address || '') +\n' ' +\n(comment_text || '')\n).toUpperCase();\n\nfor (const zone of zones) {\nif (searchText.includes(zone)) {\nlocal_area = zone;\nbreak;\n}\n}\n\n// Détection DOWN (uniquement incidents collectifs)\nlet case_type = 'NORMAL';\n\nif (\nsearchText.includes('CLIENTS DOWN') ||\nsearchText.includes('INCIDENT DOWN') ||\nsearchText.includes('INCIDENT COLLECTIF') ||\nsearchText.includes('PANNE COLLECTIVE') ||\nsearchText.includes('PLUSIEURS CLIENTS')\n) {\ncase_type = 'DOWN';\n}\n\n// Fallback\nif (!local_area) {\nlocal_area = 'UNKNOWN';\n}\n\nreturn [\n{\njson: {\ncase_number,\ncase_type,\ncustomer_name,\ncustomer_phone,\nnetwork_access,\nservice_activity,\nproblem_type,\ndescription_text,\ncomment_text,\ninternet_login,\nfull_address,\nlocal_area\n}\n}\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -32
+      ],
+      "id": "2c541cf4-60cd-4af5-b12b-3fd4c5c1a5b6",
+      "name": "Code Parser"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\nteam_name,\nwhatsapp_group,\npriority_order\nFROM zone_assignments\nWHERE zone_name = '{{ $json.local_area }}'\nORDER BY\nCASE\n    WHEN case_type = '{{ $json.case_type }}' THEN 1\n    WHEN case_type = 'DOWN' THEN 2\n    ELSE 3\nEND,\npriority_order ASC\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        368,
+        -256
+      ],
+      "id": "32283893-22bf-44fa-b1e7-8da6bb239db0",
+      "name": "Assignment SQL",
+      "credentials": {
+        "mySql": {
+          "id": "RxizL58A2DqNtSt3",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        368,
+        80
+      ],
+      "id": "c7b98d88-4386-4755-bdd2-e5c64271a89b",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ultramsg.com/instance180259/messages/chat?token=ypc0szfu0lo8awrf",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_group }}\",\n  \"body\": \"🚨 NOUVELLE CASE SAV\\n\\n🌐 Accès Réseau : {{ $json.network_access }}\\n👤 Client : {{ $json.customer_name }}\\n📞 Téléphone : {{ $json.customer_phone }}\\n📍 Zone : {{ $json.local_area }}\\n🏠 Adresse : {{ $json.full_address }}\\n🛠️ Type : {{ $json.case_type }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        832,
+        16
+      ],
+      "id": "7e9cdd5d-0bbf-416e-8546-9ddcdaf06412",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO cases (\n\ncase_number,\ncase_type,\ncustomer_name,\ncustomer_phone,\nnetwork_access,\nlocal_area,\nfull_address,\ndescription_text,\ncomment_text,\nassigned_team,\nwhatsapp_group\n\n)\n\nVALUES (\n\n'{{ ($json.case_number || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.case_type || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.customer_name || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.customer_phone || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.network_access || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.local_area || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.full_address || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.description_text || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.comment_text || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.team_name || \"\").replace(/'/g, \"''\") }}',\n\n'{{ ($json.whatsapp_group || \"\").replace(/'/g, \"''\") }}'\n\n)\n\nON DUPLICATE KEY UPDATE\n\ncase_type = VALUES(case_type),\ncustomer_name = VALUES(customer_name),\ncustomer_phone = VALUES(customer_phone),\nnetwork_access = VALUES(network_access),\nlocal_area = VALUES(local_area),\nfull_address = VALUES(full_address),\ndescription_text = VALUES(description_text),\ncomment_text = VALUES(comment_text),\nassigned_team = VALUES(assigned_team),\nwhatsapp_group = VALUES(whatsapp_group);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        816,
+        -320
+      ],
+      "id": "4385dc44-06a3-4f11-8a77-f4f2e7600fb0",
+      "name": "Save Case SQL1",
+      "credentials": {
+        "mySql": {
+          "id": "RxizL58A2DqNtSt3",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO whatsapp_logs (\ncase_number,\nteam_name,\nwhatsapp_group,\nmessage_content,\nsent_status,\ncreated_at\n)\nVALUES (\n'{{ $json.case_number }}',\n'{{ $json.team_name }}',\n'{{ $json.whatsapp_group }}',\n'🚨 NOUVELLE CASE SAV - {{ $json.case_number }} - {{ $json.customer_name }}',\n'SENT',\nNOW()\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        848,
+        240
+      ],
+      "id": "5bc62dc0-e0ef-4003-b974-6bf3fedb29c4",
+      "name": "Sav Whatsapp Log",
+      "credentials": {
+        "mySql": {
+          "id": "RxizL58A2DqNtSt3",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "operation": "create",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        -224
+      ],
+      "id": "89515845-f265-4e54-9d93-c8e3019dd0d1",
+      "name": "Create a calendar",
+      "webhookId": "0841c06d-0e14-4cc0-add8-35e280068e56"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Code Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Parser": {
+      "main": [
+        [
+          {
+            "node": "Assignment SQL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Assignment SQL": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Save Case SQL1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sav Whatsapp Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Case SQL1": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "93e22523-aef2-4901-88b1-7ed15d41dd2e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e2782d7792ffa52f3a8e16d6b4b44b6773df3bc3f577d345b9e513835de45513"
+  },
+  "id": "TtwsLYJKziZ4IBVh",
+  "tags": []
+}
